@@ -1,0 +1,65 @@
+# ---------------------------
+# Python
+# ---------------------------
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.tmp
+
+# Virtual environments
+venv/
+.mypy_cache/
+.pytest_cache/
+
+# ---------------------------
+# Secrets / Credentials
+# ---------------------------
+.env
+*.env
+*.pem
+*.key
+*.credentials
+
+# ---------------------------
+# Editors / OS
+# ---------------------------
+.DS_Store
+.idea/
+.vscode/*
+# Allow shared VSCode configs
+!.vscode/settings.json
+!.vscode/launch.json
+
+# ---------------------------
+# Project-specific (important)
+# ---------------------------
+
+# Scraper output
+scraped_data/
+cache/
+tmp/
+
+# Embeddings & vector indexes
+embeddings/*.npy
+embeddings/*.npz
+embeddings/index/
+
+# LangGraph / DynamoDB checkpoints
+checkpoints/
+*.msgpack
+
+# Logs / local DBs
+*.log
+*.sqlite
+App/logs/
+ChatBot/logs/
+
+# ---------------------------
+# Build / Dist
+# ---------------------------
+build/
+dist/
+*.egg-info/
+
+

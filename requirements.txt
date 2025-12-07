@@ -1,0 +1,33 @@
+python-dotenv
+pyyaml
+
+# LangChain stack (pydantic v2, 1.x line)
+langchain==1.1.2
+langchain-core==1.1.1
+langchain-community==0.4.1
+langchain-pinecone==0.2.13
+langgraph
+langgraph_dynamodb_checkpoint
+# Google Gemini integration (needs to be >= 3.0.0 for LangChain 1.x)
+langchain-google-genai>=3.0.0
+
+# Pinecone + embeddings
+pinecone-client==6.0.0
+
+# Web + parsing
+requests
+beautifulsoup4
+lxml
+PyPDF2
+
+# Tokenization / misc
+tiktoken
+protobuf
+
+# DynamoDB
+boto3
+
+#Backend server
+fastapi
+uvicorn[standard]
+msgpack
