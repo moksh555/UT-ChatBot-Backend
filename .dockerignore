@@ -1,0 +1,30 @@
+# Python stuff
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Virtual envs
+venv/
+.myenv/
+myenv/
+.env/
+
+# Git
+.git
+.gitignore
+
+# IDE
+.vscode/
+.idea/
+
+# Scraped data / big artifacts
+scraped_data/
+Scraper/
+Tests/
+*.pdf
+*.csv
+*.log
+
+# OS junk
+.DS_Store
