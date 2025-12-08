@@ -128,7 +128,7 @@ def retrive_documents(state: State) -> State:
 
     try:
         retrieve_docs = []
-
+        print(f'LOG: Retrieving documents for campuses -> {campuses} : FUNCTION -> retrive_documents : time -> {datetime.now().isoformat(timespec="seconds")}')
         if campuses != ['All']:
             for campus in campuses:
                 docs_matched = index.query(
@@ -160,7 +160,7 @@ def retrive_documents(state: State) -> State:
                 "UT_Southwestern",
                 "UT_Tyler"
             ]
-
+            print(f'LOG: Retrieving documents for all campuses : FUNCTION -> retrive_documents : time -> {datetime.now().isoformat(timespec="seconds")}')
             for campus in ALL_CAMPUSES:
                 docs_matched = index.query(
                     vector=query_embedding,
@@ -174,6 +174,7 @@ def retrive_documents(state: State) -> State:
                         "score": doc.score,
                         "metadata": doc.metadata
                     })
+        print(f'LOG: Retrieved {len(retrieve_docs)} documents : FUNCTION -> retrive_documents : time -> {datetime.now().isoformat(timespec="seconds")}')
         return {"retrieved_docs": retrieve_docs}
     except Exception as e:
         print(f'LOG: Error during document retrieval -> {str(e)} : FUNCTION -> retrive_documents : time -> {datetime.now().isoformat(timespec="seconds")}')
@@ -183,6 +184,7 @@ def retrive_documents(state: State) -> State:
 def prepare_docs(state: State) -> State:
     retrieved_docs = state.get("retrieved_docs")
     context_documents = []
+    print(f'LOG: Preparing documents for context : FUNCTION -> prepare_docs : time -> {datetime.now().isoformat(timespec="seconds")}')
     for docs in retrieved_docs:
         # print(f'LOG: Retrieved doc -> {docs} : FUNCTION -> prepare_docs : time -> {datetime.now().isoformat(timespec="seconds")}')
         metadata = docs.get('metadata', {})
@@ -190,21 +192,23 @@ def prepare_docs(state: State) -> State:
         title = metadata.get('title', 'No Title')
         university = metadata.get('university', 'Unknown University')
         context_documents.append(f"Title: {title}\nUniversity: {university}\nContent: {text}\n")
-    
+    print(f'LOG: Prepared {len(context_documents)} documents for context : FUNCTION -> prepare_docs : time -> {datetime.now().isoformat(timespec="seconds")}')
     full_context = "\n---\n".join(context_documents)
     return {"full_context_documents": full_context}
 
 def chatbot_node(state: State) -> State:
     full_context = state["full_context_documents"]
     messages = state.get("messages", [])
-
+    print(f'LOG: Generating chatbot response : FUNCTION -> chatbot_node : time -> {datetime.now().isoformat(timespec="seconds")}')
     system_prompt = "You are an assistant specializing in questions about the University of Texas system campuses. When context is available and relevant, use it as your primary source. If the context does not include the answer, use your broader knowledge to help, but never contradict the context. Keep responses concise and student-friendly."
     lc_messages: List[BaseMessage] = [
         SystemMessage(content=system_prompt),
         SystemMessage(content=f"Context Documents:\n{full_context}"),
     ]
     lc_messages.extend(messages) 
+    print(f'LOG: Final messages sent to chatbot model : FUNCTION -> chatbot_node : time -> {datetime.now().isoformat(timespec="seconds")}')
     ai_msg = chat_model.invoke(lc_messages)
+    print(f'LOG: Chatbot response generated : FUNCTION -> chatbot_node : time -> {datetime.now().isoformat(timespec="seconds")}')
     return {"messages": [ai_msg]}
 
 
