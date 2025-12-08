@@ -31,3 +31,9 @@ boto3
 fastapi
 uvicorn[standard]
 msgpack
+passlib[bcrypt]
+python-jose[cryptography]
+python-multipart
+authlib 
+httpx
+bcrypt==3.2.2

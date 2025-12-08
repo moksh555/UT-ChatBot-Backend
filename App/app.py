@@ -3,8 +3,9 @@ FastAPI application with proper exception handling.
 """
 
 from datetime import datetime
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, Request, Depends
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
 import boto3
@@ -17,22 +18,39 @@ from .core.exceptions import (
     InvalidThreadIDError,
     ThreadNotFoundError,
     DeserializationError,
-    DatabaseError
+    DatabaseError,
+    NoAccessToThread
 )
 from .utils.validators import ThreadIDValidator
 from .utils.serializers import CheckpointSerializer, extract_messages
 import os
 from dotenv import load_dotenv
 from ChatBot.LangGraph_workflow import app as langgraph_app
+from .core.config import settings
+from .core.exceptions import ChatHistoryBaseException, InvalidThreadIDError, ThreadNotFoundError, DeserializationError, DatabaseError
+from .models.requests import UserRegister, UserLogin, ChatRequest
+from .models.responses import Token, UserResponse, ChatResponse
+from .services.auth_service import AuthService
+from .api.dependencies import get_current_user
 
 load_dotenv()
 
-app = FastAPI(title="Chat History API")
+app = FastAPI(title=settings.app_name, version=settings.app_version)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Your existing DynamoDB setup
 dynamodb = boto3.resource('dynamodb', region_name=os.getenv("AWS_REGION", "us-east-1"))
 check_pointer_table = os.getenv("CHECKPOINTER_TABLE", "langgraph-checkpoints")
 user_personal_history_table = os.getenv("USER_PERSONAL_HISTORY", "user-personal-history")
+
+
+auth_service = AuthService()
 
 # ============================================================================
 # Global Exception Handlers
@@ -64,12 +82,49 @@ async def general_exception_handler(request: Request, exc: Exception):
 # API Endpoints
 # ============================================================================
 
+# ============================================================================
+# Authentication Endpoints
+# ============================================================================
+
+@app.post("/auth/register", response_model=Token)
+async def register(user_data: UserRegister):
+    """Register a new user."""
+    result = auth_service.register_user(
+        email=user_data.email,
+        password=user_data.password,
+        full_name=user_data.full_name
+    )
+    return Token(access_token=result["access_token"])
+
+@app.post("/auth/login", response_model=Token)
+async def login(login_data: UserLogin):
+    """Login with email and password."""
+    result = auth_service.login_user(
+        email=login_data.email,
+        password=login_data.password
+    )
+    return Token(access_token=result["access_token"])
+
+@app.get("/auth/me", response_model=UserResponse)
+async def get_me(current_user: dict = Depends(get_current_user)):
+    """Get current user info."""
+    user = auth_service.get_user_by_id(current_user["user_id"])
+    return UserResponse(
+        user_id=user["user_id"],
+        email=user["email"],
+        full_name=user.get("full_name"),
+        created_at=user["created_at"]
+    )
+# ---------------------------------------------------------------------------------------------------------------------
+
+
+
 
 # ---------------------------------------------------------------------------------------------------------------------
 # GET Chat History
 # ---------------------------------------------------------------------------------------------------------------------
-@app.get("/chats/{thread_id}")
-async def get_chat_history(thread_id: str, max_messages: int = 1000):
+@app.get("/chats/specific/{thread_id}")
+async def get_chat_history(thread_id: str, max_messages: int = 100, current_user: dict = Depends(get_current_user)):
     """
     Retrieve chat history for a thread.
     
@@ -91,6 +146,48 @@ async def get_chat_history(thread_id: str, max_messages: int = 1000):
     thread_id = ThreadIDValidator.validate(thread_id)
     
     try:
+        current_user_id = current_user["email"]
+        
+        #first check if thread_id is in checpointer table if not then it is new and dont care about ownership else get along rest of the code
+        checkpointer_table = dynamodb.Table(check_pointer_table)  # or settings.checkpointer_table
+        response = checkpointer_table.query(
+            KeyConditionExpression=Key("PK").eq(thread_id),
+            ScanIndexForward=False,
+            Limit=1,
+            ConsistentRead=True,
+        )
+
+        items = response.get("Items", [])
+
+        # If there is no checkpoint at all for this thread_id,
+        # treat it as "no history yet" (new or invalid thread).
+        if not items:
+            return {
+                "thread_id": thread_id,
+                "message_count": 0,
+                "messages": [],
+            }
+
+        # check for thread_id belongs to current user in personal history
+        history_table = dynamodb.Table(user_personal_history_table)
+        history_resp = history_table.get_item(Key={"user_id": current_user_id})
+        history_item = history_resp.get("Item")
+
+        # If user has no history at all
+        if not history_item:
+            # You can choose 404 or 403. 403 is more explicit:
+            raise NoAccessToThread("You do not have access to this thread")
+
+        personal_history = history_item.get("personal_history", [])
+
+        # Check if this thread_id is in their personal_history list
+        owns_thread = any(
+            h.get("thread_id") == thread_id for h in personal_history
+        )
+
+        if not owns_thread:
+            raise NoAccessToThread("You do not have access to this thread")
+
         # Query DynamoDB
         table = dynamodb.Table(check_pointer_table)
         response = table.query(
@@ -156,8 +253,8 @@ class PersonalChatHistoryResponse(BaseModel):
     user_id: str
     personal_history: list
 
-@app.get("/chats/personal-history/{user_id}", response_model=PersonalChatHistoryResponse)
-def get_personal_chat_history(user_id: str):
+@app.get("/chats/personal-history", response_model=PersonalChatHistoryResponse)
+async def get_personal_chat_history(current_user: dict = Depends(get_current_user)):
     """
     Retrieve personal chat history for a user.
     
@@ -170,6 +267,7 @@ def get_personal_chat_history(user_id: str):
     # This is a placeholder implementation.
     # In a real application, you would integrate with your chat history storage here.
     try:
+        user_id = current_user["email"]
         table = dynamodb.Table(user_personal_history_table)
         response = table.get_item(Key={"user_id": user_id})
         item = response.get("Item", {})
@@ -201,7 +299,7 @@ class ChatResponse(BaseModel):
     model_response: str
 
 @app.post("/chats/{thread_id}", response_model=ChatResponse)
-def chat_with_model(thread_id: str, item: ChatRequest):
+async def chat_with_model(thread_id: str, item: ChatRequest, current_user: dict = Depends(get_current_user)):
     """
     Endpoint to send a message to the chat model and receive a response.
     
@@ -214,7 +312,7 @@ def chat_with_model(thread_id: str, item: ChatRequest):
     """
     try:
         user_message = item.user_message
-        user= item.user
+        user= current_user["email"]
         thread_id = ThreadIDValidator.validate(thread_id)
 
         #check and upodate personal history
@@ -324,6 +422,9 @@ def update_personal_history(thread_id, user, user_message):
 #----------------------------------------------------   ----------------------------------- -------------
 
 
+# -----------------------------------------------------------------------------------------------------
+# Health Check Endpoints
+# -----------------------------------------------------------------------------------------------------
 @app.get("/health")
 async def health_check():
     """Health check endpoint."""
@@ -336,3 +437,13 @@ async def health_check():
             status_code=503,
             content={"status": "unhealthy", "error": str(e)}
         )
+
+@app.get("/")
+async def root():
+    """Root endpoint."""
+    return {
+        "message": "Texas College ChatBot API",
+        "version": settings.app_version,
+        "status": "online"
+    }
+# -----------------------------------------------------------------------------------------------------

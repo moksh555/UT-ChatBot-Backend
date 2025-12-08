@@ -57,6 +57,16 @@ class ThreadNotFoundError(ChatHistoryBaseException):
             details={"thread_id": thread_id}
         )
 
+class NoAccessToThread(ChatHistoryBaseException):
+    """Raised when thread doesn't belong to particular user"""
+    
+    def __init__(self, thread_id: str):
+        super().__init__(
+            message=f"Thread not owned by you: {thread_id}",
+            status_code=403,
+            details={"thread_id": thread_id}
+        )
+
 
 # ============================================================================
 # Server Errors (5xx)
@@ -117,4 +127,47 @@ class ChatProcessingError(ChatHistoryBaseException):
             message=f"Chat processing failed: {reason}",
             status_code=500,
             details=details
+        )
+
+class AuthenticationError(ChatHistoryBaseException):
+    """Raised when authentication fails."""
+    
+    def __init__(self, message: str = "Authentication required"):
+        super().__init__(message, status_code=401)
+
+
+class AuthorizationError(ChatHistoryBaseException):
+    """Raised when user doesn't have permission."""
+    
+    def __init__(self, message: str = "Insufficient permissions"):
+        super().__init__(message, status_code=403)
+
+
+class TokenExpiredError(AuthenticationError):
+    """Raised when token has expired."""
+    
+    def __init__(self):
+        super().__init__("Token has expired")
+
+
+# ... existing exceptions ...
+
+class InvalidCredentialsError(ChatHistoryBaseException):
+    """Raised when email/password is incorrect."""
+    
+    def __init__(self):
+        super().__init__(
+            message="Invalid email or password",
+            status_code=401
+        )
+
+
+class UserAlreadyExistsError(ChatHistoryBaseException):
+    """Raised when user tries to register with existing email."""
+    
+    def __init__(self, email: str):
+        super().__init__(
+            message=f"User with email {email} already exists",
+            status_code=400,
+            details={"email": email}
         )
