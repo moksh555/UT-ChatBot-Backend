@@ -45,6 +45,13 @@ jobs:
             docker stop texas-chatbot || true
             docker rm texas-chatbot || true
 
+            CONTAINER_ON_8000=$(docker ps -q --filter "publish=8000")
+            if [ -n "$CONTAINER_ON_8000" ]; then
+              echo "Stopping containers using port 8000: $CONTAINER_ON_8000"
+              docker stop $CONTAINER_ON_8000 || true
+              docker rm $CONTAINER_ON_8000 || true
+            fi
+
             docker run -d \
               --name texas-chatbot \
               --restart=always \
