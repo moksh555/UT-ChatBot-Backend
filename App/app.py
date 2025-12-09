@@ -291,7 +291,6 @@ async def get_personal_chat_history(current_user: dict = Depends(get_current_use
 #----------------------------------------------------------------------------------------------------------------------
 class ChatRequest(BaseModel):
     user_message: str
-    user: str
 
 class ChatResponse(BaseModel):
     thread_id: str
