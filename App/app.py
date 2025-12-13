@@ -41,7 +41,7 @@ app.include_router(google_oauth_router)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.allowed_origins,
+    allow_origins=["https://texascollegeguides.com", "https://www.texascollegeguides.com", "http://localhost:5173"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

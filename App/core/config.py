@@ -48,10 +48,6 @@ class Settings(BaseSettings):
     app_name: str = "Texas College ChatBot API"
     app_version: str = "1.0.0"
 
-    allowed_origins: List[str] = Field(
-        default_factory=list,
-        env="ALLOWED_ORIGINS",
-    )
     
     model_config = SettingsConfigDict(
         env_file=".env",
