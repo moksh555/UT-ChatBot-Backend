@@ -1,14 +1,16 @@
 """
 FastAPI application with proper exception handling.
 """
-
+import boto3
+import os
+from dotenv import load_dotenv
 from datetime import datetime
-from fastapi import FastAPI, Request, Depends
+from fastapi import FastAPI, Request, Depends, Response
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+
 from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
-import boto3
 from pydantic import BaseModel
 from langchain_core.messages import HumanMessage
 
@@ -23,22 +25,23 @@ from .core.exceptions import (
 )
 from .utils.validators import ThreadIDValidator
 from .utils.serializers import CheckpointSerializer, extract_messages
-import os
-from dotenv import load_dotenv
 from ChatBot.LangGraph_workflow import app as langgraph_app
-from .core.config import settings
-from .core.exceptions import ChatHistoryBaseException, InvalidThreadIDError, ThreadNotFoundError, DeserializationError, DatabaseError
-from .models.requests import UserRegister, UserLogin, ChatRequest
-from .models.responses import Token, UserResponse, ChatResponse
-from .services.auth_service import AuthService
-from .api.dependencies import get_current_user
+from App.api.routes.google_oauth import router as google_oauth_router
+from App.core.config import settings
+from App.core.exceptions import ChatHistoryBaseException, InvalidThreadIDError, ThreadNotFoundError, DeserializationError, DatabaseError
+from App.models.requests import UserRegister, UserLogin, ChatRequest
+from App.models.responses import Token, UserResponse, ChatResponse
+from App.services.auth_service import AuthService
+from App.api.dependencies import get_current_user
 
 load_dotenv()
 
 app = FastAPI(title=settings.app_name, version=settings.app_version)
+app.include_router(google_oauth_router)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -115,6 +118,15 @@ async def get_me(current_user: dict = Depends(get_current_user)):
         full_name=user.get("full_name"),
         created_at=user["created_at"]
     )
+
+@app.post("/auth/logout")
+async def logout(response: Response):
+    response.delete_cookie(
+        key=settings.access_cookie_name,
+        path="/",
+        domain=settings.cookie_domain or None,
+    )
+    return {"message": "Logged out"}
 # ---------------------------------------------------------------------------------------------------------------------
 
 

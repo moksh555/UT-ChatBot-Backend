@@ -38,3 +38,5 @@ authlib
 httpx
 bcrypt==3.2.2
 email-validator
+httpx
+google-auth

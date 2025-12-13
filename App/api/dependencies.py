@@ -2,20 +2,22 @@
 FastAPI dependencies for authentication.
 """
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from typing import Dict
+from typing import Dict, Optional
 
-from ..core.security import decode_token
-from ..core.exceptions import AuthenticationError
-from ..services.auth_service import AuthService
+from App.core.config import settings
+from App.core.security import decode_token
+from App.core.exceptions import AuthenticationError
+from App.services.auth_service import AuthService
 
-security = HTTPBearer()
+security = HTTPBearer(auto_error=False)
 auth_service = AuthService()
 
 
 async def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    request: Request,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
 ) -> Dict[str, str]:
     """
     Get current authenticated user from JWT token.
@@ -27,7 +29,16 @@ async def get_current_user(
             email = current_user["email"]
     """
     try:
-        token = credentials.credentials
+        token: Optional[str] = None
+        token = request.cookies.get(settings.access_cookie_name)
+
+        #Temporary fallback to Bearer token (keep for now; remove later)
+        if not token and credentials:
+            token = credentials.credentials
+
+        if not token:
+            raise AuthenticationError("Missing authentication token")
+        
         payload = decode_token(token)
         
         user_id = payload.get("sub")
