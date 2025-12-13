@@ -20,7 +20,7 @@ async def get_current_user(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
 ) -> Dict[str, str]:
     """
-    Get current authenticated user from JWT token.
+    Get current authenticated user from cookies 
     
     Usage:
         @app.get("/protected")

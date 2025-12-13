@@ -89,24 +89,55 @@ async def general_exception_handler(request: Request, exc: Exception):
 # Authentication Endpoints
 # ============================================================================
 
-@app.post("/auth/register", response_model=Token)
-async def register(user_data: UserRegister):
-    """Register a new user."""
+@app.post("/auth/register")
+async def register(user_data: UserRegister, response: Response):
+    """Register a new user and set session cookie."""
     result = auth_service.register_user(
         email=user_data.email,
         password=user_data.password,
         full_name=user_data.full_name
     )
-    return Token(access_token=result["access_token"])
 
-@app.post("/auth/login", response_model=Token)
-async def login(login_data: UserLogin):
-    """Login with email and password."""
+    access_token = result["access_token"]
+
+    response.set_cookie(
+        key=settings.access_cookie_name,   # e.g. "access_token"
+        value=access_token,
+        httponly=True,
+        secure=settings.cookie_secure,      # True in prod
+        samesite=settings.cookie_samesite,  # "lax" or "none"
+        domain=settings.cookie_domain or None,
+        path="/",
+        max_age=settings.access_token_expire_minutes * 60,
+    )
+
+    # return whatever you want; frontend doesn't need token anymore
+    return {"message": "registered"}
+
+
+@app.post("/auth/login")
+async def login(login_data: UserLogin, response: Response):
+    """Login user and set session cookie."""
     result = auth_service.login_user(
         email=login_data.email,
         password=login_data.password
     )
-    return Token(access_token=result["access_token"])
+
+    access_token = result["access_token"]
+
+    response.set_cookie(
+        key=settings.access_cookie_name,
+        value=access_token,
+        httponly=True,
+        secure=settings.cookie_secure,
+        samesite=settings.cookie_samesite,
+        domain=settings.cookie_domain or None,
+        path="/",
+        max_age=settings.access_token_expire_minutes * 60,
+    )
+
+    return {"message": "logged_in"}
+
 
 @app.get("/auth/me", response_model=UserResponse)
 async def get_me(current_user: dict = Depends(get_current_user)):

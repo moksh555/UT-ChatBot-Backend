@@ -29,33 +29,27 @@ jobs:
           docker tag ${{ secrets.ECR_REPOSITORY }}:latest ${{ secrets.ECR_REGISTRY }}/${{ secrets.ECR_REPOSITORY }}:latest
           docker push ${{ secrets.ECR_REGISTRY }}/${{ secrets.ECR_REPOSITORY }}:latest
 
-      - name: Decode SSH key
+      - name: Deploy to EC2 via SSM
         run: |
-          echo "${{ secrets.EC2_SSH_KEY }}" | base64 --decode > key.pem
-          chmod 600 key.pem
+          COMMAND_ID=$(aws ssm send-command \
+            --instance-ids "${{ secrets.EC2_INSTANCE_ID }}" \
+            --document-name "AWS-RunShellScript" \
+            --comment "Deploy texas-chatbot" \
+            --parameters 'commands=[
+              "aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin ${{ secrets.ECR_REGISTRY }}",
+              "docker pull ${{ secrets.ECR_REGISTRY }}/${{ secrets.ECR_REPOSITORY }}:latest",
+              "docker stop texas-chatbot 2>/dev/null || true",
+              "docker rm texas-chatbot 2>/dev/null || true",
+              "docker run -d --name texas-chatbot --restart=always -p 8000:8000 --env-file /home/ec2-user/.env ${{ secrets.ECR_REGISTRY }}/${{ secrets.ECR_REPOSITORY }}:latest",
+              "echo Deployment completed successfully"
+            ]' \
+            --output text \
+            --query 'Command.CommandId')
 
-      - name: Deploy on EC2
-        run: |
-          ssh -o StrictHostKeyChecking=no -i key.pem ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'EOF'
-            aws ecr get-login-password --region ${AWS_REGION:-us-east-1} \
-              | docker login --username AWS --password-stdin ${{ secrets.ECR_REGISTRY }}
-            
-            docker pull ${{ secrets.ECR_REGISTRY }}/${{ secrets.ECR_REPOSITORY }}:latest
+          echo "Command ID: $COMMAND_ID"
 
-            docker stop texas-chatbot || true
-            docker rm texas-chatbot || true
+          aws ssm wait command-executed \
+            --command-id "$COMMAND_ID" \
+            --instance-id "${{ secrets.EC2_INSTANCE_ID }}"
 
-            CONTAINER_ON_8000=$(docker ps -q --filter "publish=8000")
-            if [ -n "$CONTAINER_ON_8000" ]; then
-              echo "Stopping containers using port 8000: $CONTAINER_ON_8000"
-              docker stop $CONTAINER_ON_8000 || true
-              docker rm $CONTAINER_ON_8000 || true
-            fi
-
-            docker run -d \
-              --name texas-chatbot \
-              --restart=always \
-              -p 8000:8000 \
-              --env-file .env \
-              ${{ secrets.ECR_REGISTRY }}/${{ secrets.ECR_REPOSITORY }}:latest
-          EOF
+          echo "Deployment completed!"
