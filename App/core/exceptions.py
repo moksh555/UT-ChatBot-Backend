@@ -171,3 +171,13 @@ class UserAlreadyExistsError(ChatHistoryBaseException):
             status_code=400,
             details={"email": email}
         )
+
+class ChatHistoryNotFoundError(ChatHistoryBaseException):
+    """Raised when no chat history exists for user."""
+    
+    def __init__(self, user_id: str):
+        super().__init__(
+            message=f"No chat history found for user: {user_id}",
+            status_code=404,
+            details={"user_id": user_id}
+        )

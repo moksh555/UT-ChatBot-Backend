@@ -28,7 +28,7 @@ from .utils.serializers import CheckpointSerializer, extract_messages
 from ChatBot.LangGraph_workflow import app as langgraph_app
 from App.api.routes.google_oauth import router as google_oauth_router
 from App.core.config import settings
-from App.core.exceptions import ChatHistoryBaseException, InvalidThreadIDError, ThreadNotFoundError, DeserializationError, DatabaseError
+from App.core.exceptions import ChatHistoryBaseException, InvalidThreadIDError, ThreadNotFoundError, DeserializationError, DatabaseError, ChatHistoryNotFoundError
 from App.models.requests import UserRegister, UserLogin, ChatRequest
 from App.models.responses import Token, UserResponse, ChatResponse
 from App.services.auth_service import AuthService
@@ -463,6 +463,57 @@ def update_personal_history(thread_id, user, user_message):
         raise DatabaseError(f"Unexpected error: {str(e)}", e)
 #----------------------------------------------------   ----------------------------------- -------------
 
+# -----------------------------------------------------------------------------------------------------
+# Delete Chat Thread Endpoint
+# -----------------------------------------------------------------------------------------------------
+@app.delete("/chats/{thread_id}")
+def delete_chat_thread(thread_id: str, current_user: dict = Depends(get_current_user)):
+    """
+    Delete a chat thread and its associated data.
+    
+    Args:
+        thread_id: Unique conversation identifier
+    Returns:
+        JSON with deletion status
+    """
+    try:
+        user_id = current_user["email"]
+        thread_id = ThreadIDValidator.validate(thread_id)
+        table = dynamodb.Table(user_personal_history_table)
+        response = table.get_item(Key={"user_id": user_id})
+        item = response.get("Item")
+
+        if not item:
+            raise ChatHistoryNotFoundError("Chat history not found for user")
+        
+        personal_history = item.get("personal_history", [])
+
+        # Check if this thread_id is in their personal_history list
+        owns_thread = any(
+            h.get("thread_id") == thread_id for h in personal_history
+        )
+
+        if not owns_thread:
+            raise ChatHistoryNotFoundError("Thread not found or access denied")
+
+        # Remove the thread from personal_history
+        personal_history = [h for h in personal_history if h.get("thread_id") != thread_id]
+
+        # Update the user's personal history
+        table.update_item(
+            Key={"user_id": user_id},
+            UpdateExpression="SET personal_history = :ph",
+            ExpressionAttributeValues={":ph": personal_history}
+        )
+        return {"message": f"Thread {thread_id} deleted successfully"}
+    except Exception as e:
+        raise DatabaseError(f"Unexpected error: {str(e)}", e) 
+    except ClientError as e:
+        error_code = e.response.get('Error', {}).get('Code', 'Unknown')
+        raise DatabaseError(f"DynamoDB operation failed: {error_code}", e)
+
+#-----------------------------------------------------------------------------------------------------------------------
+      
 
 # -----------------------------------------------------------------------------------------------------
 # Health Check Endpoints
