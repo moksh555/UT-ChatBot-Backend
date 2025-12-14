@@ -1,4 +1,43 @@
-- name: Deploy to EC2 via SSM (deploy SHA tag)
+name: Deploy to EC2
+
+on:
+  push:
+    branches: ["main"]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v1
+
+      - name: Build, tag and push image to ECR (SHA + latest)
+        run: |
+          IMAGE="${{ secrets.ECR_REGISTRY }}/${{ secrets.ECR_REPOSITORY }}"
+          TAG="${{ github.sha }}"
+
+          echo "Building $IMAGE:$TAG"
+          docker build -t "$IMAGE:$TAG" .
+
+          echo "Pushing $IMAGE:$TAG"
+          docker push "$IMAGE:$TAG"
+
+          echo "Tagging and pushing $IMAGE:latest"
+          docker tag "$IMAGE:$TAG" "$IMAGE:latest"
+          docker push "$IMAGE:latest"
+
+      - name: Deploy to EC2 via SSM (deploy SHA tag)
         run: |
           IMAGE="${{ secrets.ECR_REGISTRY }}/${{ secrets.ECR_REPOSITORY }}"
           TAG="${{ github.sha }}"
@@ -7,39 +46,39 @@
             --instance-ids "${{ secrets.EC2_INSTANCE_ID }}" \
             --document-name "AWS-RunShellScript" \
             --comment "Deploy texas-chatbot $TAG" \
-            --parameters 'commands=[
-              "set -ex",
-              "echo \"=== Deployment started at $(date) ===\"",
-              "echo \"Checking prerequisites...\"",
-              "which aws || (echo \"AWS CLI not found\" && exit 1)",
-              "which docker || (echo \"Docker not found\" && exit 1)",
-              "docker info > /dev/null || (echo \"Docker daemon not running\" && exit 1)",
-              "[ -f /home/ec2-user/.env ] || (echo \".env file not found\" && exit 1)",
-              "echo \"=== Logging into ECR ===\"",
-              "aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin '"${{ secrets.ECR_REGISTRY }}"'",
-              "echo \"=== Pulling image '"$IMAGE:$TAG"' ===\"",
-              "docker pull '"$IMAGE:$TAG"'",
-              "echo \"=== Stopping old container ===\"",
-              "docker stop texas-chatbot 2>/dev/null || echo \"No container to stop\"",
-              "docker rm texas-chatbot 2>/dev/null || echo \"No container to remove\"",
-              "echo \"=== Starting new container ===\"",
-              "docker run -d --name texas-chatbot --restart=always -p 8000:8000 --env-file /home/ec2-user/.env '"$IMAGE:$TAG"'",
-              "sleep 3",
-              "echo \"=== Container Status ===\"",
-              "docker ps --filter name=texas-chatbot",
-              "echo \"=== Container Logs (last 20 lines) ===\"",
-              "docker logs --tail 20 texas-chatbot",
-              "echo \"=== Health Check ===\"",
-              "curl -f http://localhost:8000/health || echo \"Health check failed\"",
-              "echo \"=== Deployment completed at $(date) ===\""
-            ]' \
+            --parameters commands="[
+              \"set -ex\",
+              \"echo ===== Deployment started at \$(date) =====\",
+              \"echo Checking prerequisites...\",
+              \"which aws || (echo AWS CLI not found && exit 1)\",
+              \"which docker || (echo Docker not found && exit 1)\",
+              \"docker info > /dev/null || (echo Docker daemon not running && exit 1)\",
+              \"test -f /home/ec2-user/.env || (echo .env file not found && exit 1)\",
+              \"echo ===== Logging into ECR =====\",
+              \"aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin ${{ secrets.ECR_REGISTRY }}\",
+              \"echo ===== Pulling image $IMAGE:$TAG =====\",
+              \"docker pull $IMAGE:$TAG\",
+              \"echo ===== Stopping old container =====\",
+              \"docker stop texas-chatbot 2>/dev/null || echo No container to stop\",
+              \"docker rm texas-chatbot 2>/dev/null || echo No container to remove\",
+              \"echo ===== Starting new container =====\",
+              \"docker run -d --name texas-chatbot --restart=always -p 8000:8000 --env-file /home/ec2-user/.env $IMAGE:$TAG\",
+              \"sleep 3\",
+              \"echo ===== Container Status =====\",
+              \"docker ps --filter name=texas-chatbot\",
+              \"echo ===== Container Logs (last 20 lines) =====\",
+              \"docker logs --tail 20 texas-chatbot\",
+              \"echo ===== Health Check =====\",
+              \"curl -f http://localhost:8000/health || echo Health check failed\",
+              \"echo ===== Deployment completed at \$(date) =====\"
+            ]" \
             --output text \
             --query 'Command.CommandId')
 
           echo "Command ID: $COMMAND_ID"
-          
+
           sleep 5
-          
+
           if ! aws ssm wait command-executed \
             --command-id "$COMMAND_ID" \
             --instance-id "${{ secrets.EC2_INSTANCE_ID }}"; then
@@ -52,7 +91,7 @@
               --output text
             exit 1
           fi
-          
+
           echo "Deployment successful! Output:"
           aws ssm get-command-invocation \
             --command-id "$COMMAND_ID" \
