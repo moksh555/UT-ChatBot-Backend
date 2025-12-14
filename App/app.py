@@ -467,7 +467,7 @@ def update_personal_history(thread_id, user, user_message):
 # Delete Chat Thread Endpoint
 # -----------------------------------------------------------------------------------------------------
 @app.delete("/chats/delete/{thread_id}")
-def delete_chat_thread(thread_id: str, current_user: dict = Depends(get_current_user)):
+async def delete_chat_thread(thread_id: str, current_user: dict = Depends(get_current_user)):
     """
     Delete a chat thread and its associated data.
     
