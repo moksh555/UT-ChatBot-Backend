@@ -524,7 +524,7 @@ async def health_check():
     try:
         table = dynamodb.Table(check_pointer_table)
         table.load()  # Simple operation to check table accessibility
-        return {"status": "healthy"}
+        return {"status": "healthy", "build": "last thing added delete functionality"}
     except Exception as e:
         return JSONResponse(
             status_code=503,
