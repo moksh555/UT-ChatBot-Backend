@@ -523,7 +523,7 @@ async def health_check():
     """Health check endpoint."""
     try:
         table = dynamodb.Table(check_pointer_table)
-        table.load()  # Simple operation to check table accessibility
+        table.load()  # This will raise an error if the table doesn't exist or is inaccessible
         return {"status": "healthy", "build": "last thing added delete functionality"}
     except Exception as e:
         return JSONResponse(
@@ -539,4 +539,8 @@ async def root():
         "version": settings.app_version,
         "status": "online"
     }
+
+@app.get("/__build")
+def __build():
+    return {"build": "commit:" + "Testing Deployement pipeline"}
 # -----------------------------------------------------------------------------------------------------

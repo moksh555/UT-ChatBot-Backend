@@ -20,29 +20,51 @@ jobs:
           aws-region: us-east-1
 
       - name: Login to Amazon ECR
-        id: login-ecr
         uses: aws-actions/amazon-ecr-login@v1
 
-      - name: Build, tag and push image to ECR
+      - name: Build, tag and push image to ECR (SHA + latest)
         run: |
-          docker build -t ${{ secrets.ECR_REPOSITORY }} .
-          docker tag ${{ secrets.ECR_REPOSITORY }}:latest ${{ secrets.ECR_REGISTRY }}/${{ secrets.ECR_REPOSITORY }}:latest
-          docker push ${{ secrets.ECR_REGISTRY }}/${{ secrets.ECR_REPOSITORY }}:latest
+          IMAGE="${{ secrets.ECR_REGISTRY }}/${{ secrets.ECR_REPOSITORY }}"
+          TAG="${{ github.sha }}"
 
-      - name: Deploy to EC2 via SSM
+          echo "Building $IMAGE:$TAG"
+          docker build -t "$IMAGE:$TAG" .
+
+          echo "Pushing $IMAGE:$TAG"
+          docker push "$IMAGE:$TAG"
+
+          echo "Tagging and pushing $IMAGE:latest"
+          docker tag "$IMAGE:$TAG" "$IMAGE:latest"
+          docker push "$IMAGE:latest"
+
+      - name: Deploy to EC2 via SSM (deploy SHA tag)
         run: |
+          IMAGE="${{ secrets.ECR_REGISTRY }}/${{ secrets.ECR_REPOSITORY }}"
+          TAG="${{ github.sha }}"
+
           COMMAND_ID=$(aws ssm send-command \
             --instance-ids "${{ secrets.EC2_INSTANCE_ID }}" \
             --document-name "AWS-RunShellScript" \
-            --comment "Deploy texas-chatbot" \
-            --parameters 'commands=[
-              "aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin ${{ secrets.ECR_REGISTRY }}",
-              "docker pull ${{ secrets.ECR_REGISTRY }}/${{ secrets.ECR_REPOSITORY }}:latest",
-              "docker stop texas-chatbot 2>/dev/null || true",
-              "docker rm texas-chatbot 2>/dev/null || true",
-              "docker run -d --name texas-chatbot --restart=always -p 8000:8000 --env-file /home/ec2-user/.env ${{ secrets.ECR_REGISTRY }}/${{ secrets.ECR_REPOSITORY }}:latest",
-              "echo Deployment completed successfully"
-            ]' \
+            --comment "Deploy texas-chatbot $TAG" \
+            --parameters "commands=[
+              \"set -e\",
+              \"echo Logging into ECR...\",
+              \"aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin ${{ secrets.ECR_REGISTRY }}\",
+              \"echo Pulling image $IMAGE:$TAG\",
+              \"docker pull $IMAGE:$TAG\",
+              \"echo Stopping old container...\",
+              \"docker stop texas-chatbot 2>/dev/null || true\",
+              \"docker rm texas-chatbot 2>/dev/null || true\",
+              \"echo Starting new container...\",
+              \"docker run -d --name texas-chatbot --restart=always -p 8000:8000 --env-file /home/ec2-user/.env $IMAGE:$TAG\",
+              \"echo --- RUNNING CONTAINERS ---\",
+              \"docker ps --filter name=texas-chatbot --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}'\",
+              \"echo --- IMAGE ID ---\",
+              \"docker inspect texas-chatbot --format 'ImageID={{.Image}}'\",
+              \"echo --- LOCAL HEALTH CHECK ---\",
+              \"curl -s http://localhost:8000/health || true\",
+              \"echo Deployment completed successfully\"
+            ]" \
             --output text \
             --query 'Command.CommandId')
 
